@@ -1,0 +1,16 @@
+{
+  "name": "rycos-mqtt-fiscal-hub",
+  "version": "1.0.0",
+  "description": "Demon pośredniczący (proxy/load balancer) dla wirtualnych hubów fiskalnych SBF-XXXXXX w protokole MQTT",
+  "main": "hub.js",
+  "scripts": {
+    "start": "node hub.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.8",
+    "dotenv": "^16.4.5",
+    "mqtt": "^5.3.5"
+  },
+  "author": "SolutionsBay",
+  "license": "ISC"
+}
