@@ -9,7 +9,9 @@ Lekki demon pośredniczący (proxy / load balancer) działający bezpośrednio n
 3. **Filtrowanie urządzeń**: Demon pobiera z Supabase urządzenia sparowane z tym klientem (`client_id`, `seat_id` != null) i wybiera tylko te, które:
    - Są online (aktywność `last_seen_at` z ostatnich 24 h),
    - Posiadają licencję `RYCOS_F` lub `RYCOS_PF`,
-   - Mają zainstalowaną kasę fiskalną Aplikasa (`device_info.companion_apps.aplikasa.installed = true`).
+   - Mają działający backend fiskalny:
+     - kasa wirtualna Aplikasa na Androidzie (`device_info.companion_apps.aplikasa.installed = true`, urządzenie widziane w ciągu 24 h), albo
+     - kasa/drukarka POSNET obsługiwana przez `posnet-agent` (`device_info.fiscal_backend = "posnet"`): agent raportował stan w ciągu `POSNET_MAX_SILENCE_MS` (domyślnie 3 min) i kasa mu odpowiada (`device_info.posnet.online = true`).
 4. **Inteligentny Load Balancing**:
    - **Busy State Tracking**: Demon śledzi w pamięci liczbę aktywnych, wiszących zapytań do każdego urządzenia `SBT-YYYYYY`. Pierwszeństwo mają urządzenia z liczbą aktywnych zapytań równą 0 (fizyczna kasa przetwarza wydruki sekwencyjnie).
    - **Least Connections**: Jeśli wszystkie kasy aktualnie drukują, zlecenie trafia do urządzenia o najmniejszej liczbie zapytań w kolejce.

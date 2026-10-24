@@ -62,6 +62,16 @@ const companyDevicesCache = new Map(); // companyId -> { devices: [...], fetched
 const activeFetches = new Map(); // prefix -> Promise
 const DEVICE_CACHE_TTL_MS = 60000; // 1 minuta
 
+// Kasy POSNET obsługiwane przez posnet-agent (rycos-posnet): agent raportuje stan co STATUS_INTERVAL_S (60 s).
+// Dłuższa cisza = agent nie działa albo stracił kasę → nie kierujemy do niej paragonów.
+const POSNET_MAX_SILENCE_MS = parseInt(process.env.POSNET_MAX_SILENCE_MS || '180000', 10);
+
+function isPosnetDevice(d) {
+  const info = d.device_info || {};
+  const apps = info.companion_apps || {};
+  return info.fiscal_backend === 'posnet' || !!(apps.posnet && apps.posnet.installed !== undefined);
+}
+
 // Mapa aktywnych transakcji: cmdId -> { originalHubTopic, timer, targetDeviceDisplayId }
 const pendingTransactions = new Map();
 
@@ -117,17 +127,24 @@ async function getHubAndFiscalDevices(hubDisplayId) {
     throw new Error(`Błąd weryfikacji licencji: ${seatsErr.message}`);
   }
 
-  // Filtruj: licencja RYCOS_F/PF, online, Aplikasa zainstalowana (device_info.companion_apps.aplikasa.installed)
+  // Filtruj: licencja RYCOS_F/PF i działający backend fiskalny:
+  //  • Aplikasa (Android): companion_apps.aplikasa.installed, urządzenie widziane w ciągu 24 h
+  //  • POSNET (posnet-agent): device_info.fiscal_backend = "posnet" — agent raportuje co minutę,
+  //    więc wymagamy świeżego raportu (POSNET_MAX_SILENCE_MS) i kasy odpowiadającej agentowi (posnet.online)
   const activeFiscalDevices = devices.filter(d => {
     const seat = seats?.find(s => s.device_id === d.id);
     const tierUpper = seat?.tier?.toUpperCase();
     const isFiscalTier = tierUpper === 'RYCOS_F' || tierUpper === 'RYCOS_PF';
     if (!isFiscalTier) return false;
 
-    const lastSeen = d.last_seen_at;
-    const isOnline = lastSeen ? (Date.now() - new Date(lastSeen).getTime() < 24 * 60 * 60 * 1000) : false;
-    if (!isOnline) return false;
+    const lastSeenMs = d.last_seen_at ? Date.now() - new Date(d.last_seen_at).getTime() : Infinity;
 
+    if (isPosnetDevice(d)) {
+      const posnet = (d.device_info && d.device_info.posnet) || {};
+      return lastSeenMs < POSNET_MAX_SILENCE_MS && posnet.online === true;
+    }
+
+    if (lastSeenMs >= 24 * 60 * 60 * 1000) return false;
     const apps = d.device_info && d.device_info.companion_apps;
     const hasAplikasa = !!(apps && apps.aplikasa && apps.aplikasa.installed);
     return hasAplikasa;
@@ -225,7 +242,8 @@ client.on('message', async (topic, messageBuffer) => {
         // Dodaj display_id urządzenia, które faktycznie obsłużyło zapytanie, dla celów statystyk/logów
         const decoratedResponse = {
           ...response,
-          target_display_id: sbtDisplayId
+          // posnet-agent sam podaje kasę, która wystawiła paragon (np. ten sam externalrefFR wysłany wcześniej na inną kasę)
+          target_display_id: response.target_display_id || sbtDisplayId
         };
 
         client.publish(responseTopic, JSON.stringify(decoratedResponse), { qos: 1 }, (pubErr) => {
