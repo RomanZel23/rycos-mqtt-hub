@@ -110,6 +110,8 @@ async function getHubAndFiscalDevices(hubDisplayId) {
   if (devErr || !devices || devices.length === 0) {
     if (devErr) {
       console.error(`[Error] Błąd pobierania urządzeń dla huba ${hubDisplayId}:`, devErr.message);
+    } else {
+      log(`[Hub ${hubDisplayId}] brak sparowanych urządzeń przypisanych do huba w bazie (${supabaseUrl})`);
     }
     return [];
   }
