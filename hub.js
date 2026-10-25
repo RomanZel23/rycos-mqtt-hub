@@ -131,24 +131,29 @@ async function getHubAndFiscalDevices(hubDisplayId) {
   //  • Aplikasa (Android): companion_apps.aplikasa.installed, urządzenie widziane w ciągu 24 h
   //  • POSNET (posnet-agent): device_info.fiscal_backend = "posnet" — agent raportuje co minutę,
   //    więc wymagamy świeżego raportu (POSNET_MAX_SILENCE_MS) i kasy odpowiadającej agentowi (posnet.online)
+  const rejected = [];
   const activeFiscalDevices = devices.filter(d => {
+    const why = (reason) => { rejected.push(`${d.display_id}: ${reason}`); return false; };
     const seat = seats?.find(s => s.device_id === d.id);
     const tierUpper = seat?.tier?.toUpperCase();
     const isFiscalTier = tierUpper === 'RYCOS_F' || tierUpper === 'RYCOS_PF';
-    if (!isFiscalTier) return false;
+    if (!isFiscalTier) return why(`licencja ${seat?.tier || 'brak'} (wymagana rycos_f/rycos_pf)`);
 
     const lastSeenMs = d.last_seen_at ? Date.now() - new Date(d.last_seen_at).getTime() : Infinity;
 
     if (isPosnetDevice(d)) {
       const posnet = (d.device_info && d.device_info.posnet) || {};
-      return lastSeenMs < POSNET_MAX_SILENCE_MS && posnet.online === true;
+      if (lastSeenMs >= POSNET_MAX_SILENCE_MS) return why(`POSNET: brak raportu agenta od ${Math.round(lastSeenMs / 1000)} s (limit ${POSNET_MAX_SILENCE_MS / 1000} s)`);
+      if (posnet.online !== true) return why(`POSNET: agent nie łączy się z kasą (${posnet.last_error || 'online=false'})`);
+      return true;
     }
 
-    if (lastSeenMs >= 24 * 60 * 60 * 1000) return false;
+    if (lastSeenMs >= 24 * 60 * 60 * 1000) return why('nieaktywne od ponad 24 h');
     const apps = d.device_info && d.device_info.companion_apps;
     const hasAplikasa = !!(apps && apps.aplikasa && apps.aplikasa.installed);
-    return hasAplikasa;
+    return hasAplikasa || why('brak Aplikasy');
   });
+  if (rejected.length) log(`[Hub ${hubDisplayId}] pominięte urządzenia: ${rejected.join('; ')}`);
 
   // Zapisz do cache
   companyDevicesCache.set(hubDisplayId, {
