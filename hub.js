@@ -166,6 +166,15 @@ async function getHubAndFiscalDevices(hubDisplayId) {
   return activeFiscalDevices;
 }
 
+// Rodzaj kasy żądany w komendzie (pole `backend`):
+//  • 'posnet'   — drukarka/kasa POSNET (posnet-agent): paragon drukowany,
+//  • 'aplikasa' — kasa wirtualna Aplikasa (Android): SB eParagon bez wydruku.
+// Brak pola = dowolna kasa huba (dotychczasowe zachowanie).
+const BACKENDS = ['posnet', 'aplikasa'];
+function backendOf(d) {
+  return isPosnetDevice(d) ? 'posnet' : 'aplikasa';
+}
+
 // Zabezpieczenie przed wyścigami: deduplikacja równoległych zapytań o urządzenia dla tego samego huba
 function getHubAndFiscalDevicesDeduplicated(hubDisplayId) {
   let activePromise = activeFetches.get(hubDisplayId);
@@ -284,14 +293,29 @@ client.on('message', async (topic, messageBuffer) => {
  
     const cmdId = command.id || Math.random().toString(36).substring(2, 15);
     const timeoutMs = command.timeout || defaultTimeoutMs;
+    const wantedBackend = command.backend ? String(command.backend).toLowerCase() : null;
+
+    if (wantedBackend && !BACKENDS.includes(wantedBackend)) {
+      sendErrorResponse(hubDisplayId, cmdId, 400, `Nieznany rodzaj kasy (backend): ${command.backend} — dozwolone: ${BACKENDS.join(', ')}`);
+      return;
+    }
  
     try {
       // Pobierz aktywne urządzenia fiskalne za pomocą cache i deduplikacji zapytań
-      const activeFiscalDevices = await getHubAndFiscalDevicesDeduplicated(hubDisplayId);
+      const hubDevices = await getHubAndFiscalDevicesDeduplicated(hubDisplayId);
 
-      if (!activeFiscalDevices || activeFiscalDevices.length === 0) {
+      if (!hubDevices || hubDevices.length === 0) {
         log(`[Warn] Brak dostępnych urządzeń online z licencją fiskalną w hubie ${hubDisplayId}`);
         sendErrorResponse(hubDisplayId, cmdId, 503, 'Brak dostępnych urządzeń fiskalnych online w hubie');
+        return;
+      }
+
+      // Tylko kasy żądanego rodzaju (np. drukarka POSNET w salonie zamiast kasy wirtualnej)
+      const activeFiscalDevices = wantedBackend ? hubDevices.filter(d => backendOf(d) === wantedBackend) : hubDevices;
+      if (activeFiscalDevices.length === 0) {
+        const label = wantedBackend === 'posnet' ? 'drukarki fiskalnej POSNET' : 'kasy wirtualnej Aplikasa';
+        log(`[Warn] Hub ${hubDisplayId}: brak ${label} online (żądany backend=${wantedBackend})`);
+        sendErrorResponse(hubDisplayId, cmdId, 503, `Brak dostępnej ${label} online w hubie`);
         return;
       }
 
@@ -320,7 +344,7 @@ client.on('message', async (topic, messageBuffer) => {
       const currentActive = deviceActiveRequests.get(targetDisplayId) || 0;
       deviceActiveRequests.set(targetDisplayId, currentActive + 1);
 
-      log(`Kierowanie transakcji ${cmdId} do urządzenia ${targetDisplayId} (Aktywne zlecenia: ${currentActive + 1})`);
+      log(`Kierowanie transakcji ${cmdId} do urządzenia ${targetDisplayId} [${backendOf(selectedDevice)}${wantedBackend ? ', żądany' : ''}] (Aktywne zlecenia: ${currentActive + 1})`);
 
       // Zapisz transakcję w pamięci z obsługą timeoutu
       const timer = setTimeout(() => {

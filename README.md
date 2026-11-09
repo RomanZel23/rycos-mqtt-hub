@@ -16,7 +16,11 @@ Lekki demon pośredniczący (proxy / load balancer) działający bezpośrednio n
    - **Busy State Tracking**: Demon śledzi w pamięci liczbę aktywnych, wiszących zapytań do każdego urządzenia `SBT-YYYYYY`. Pierwszeństwo mają urządzenia z liczbą aktywnych zapytań równą 0 (fizyczna kasa przetwarza wydruki sekwencyjnie).
    - **Least Connections**: Jeśli wszystkie kasy aktualnie drukują, zlecenie trafia do urządzenia o najmniejszej liczbie zapytań w kolejce.
    - **Najświeższy status**: W przypadku remisu, preferowane jest urządzenie o najnowszym statusie `last_seen_at`.
-5. **Proxy i sprzątanie**: Demon wysyła komendę na topik fizyczny, tymczasowo śledząc ID transakcji. Po odebraniu odpowiedzi przekazuje ją z powrotem do klienta na topik `rycos/SBF-XXXXXX/response`. Jeśli urządzenie nie odpowie w określonym czasie (`timeout`), demon odsyła błąd 504 i zdejmuje obciążenie z urządzenia.
+5. **Rodzaj kasy (opcjonalnie)**: komenda może zawierać pole `backend`:
+   - `"posnet"` — tylko drukarki/kasy POSNET (paragon drukowany, np. salon),
+   - `"aplikasa"` — tylko kasy wirtualne Aplikasa (SB eParagon bez wydruku).
+   Bez pola — dowolna kasa huba. Gdy w hubie nie ma kasy żądanego rodzaju online → odpowiedź 503, a dla nieznanej wartości → 400.
+6. **Proxy i sprzątanie**: Demon wysyła komendę na topik fizyczny, tymczasowo śledząc ID transakcji. Po odebraniu odpowiedzi przekazuje ją z powrotem do klienta na topik `rycos/SBF-XXXXXX/response`. Jeśli urządzenie nie odpowie w określonym czasie (`timeout`), demon odsyła błąd 504 i zdejmuje obciążenie z urządzenia.
 
 ---
 
