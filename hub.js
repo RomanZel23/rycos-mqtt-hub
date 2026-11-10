@@ -366,9 +366,12 @@ client.on('message', async (topic, messageBuffer) => {
       // Opublikuj komendę na topik fizycznego urządzenia
       const targetTopic = `rycos/${targetDisplayId}/command`;
       
-      // Zachowaj oryginalną strukturę komendy, ale upewnij się, że ma poprawne ID
+      // Zachowaj oryginalną strukturę komendy, ale upewnij się, że ma poprawne ID.
+      // Pola `timeout` i `backend` są tylko dla huba — kasa dostaje komendę w dotychczasowej postaci
+      // (aplikacja RYCOS / posnet-agent mogą inaczej traktować nieznane albo własne pola).
+      const { timeout: _hubTimeout, backend: _hubBackend, ...forwarded } = command;
       const targetPayload = JSON.stringify({
-        ...command,
+        ...forwarded,
         id: cmdId
       });
 
